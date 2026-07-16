@@ -1,0 +1,84 @@
+name: Publish NeverSoft Services APK
+
+# Builds a debug-signed APK and attaches it to a rolling, non-draft
+# "android-preview" release so the download URL is always stable:
+#   …/releases/download/android-preview/neversoft-services-os.apk
+on:
+  push:
+    branches: [ claude/confident-fermat-cvtlvb ]
+  workflow_dispatch:
+    inputs:
+      asset_name:
+        description: 'APK file name'
+        required: false
+        default: neversoft-services-os.apk
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-configuration-cache
+
+      - name: Stage APK
+        env:
+          ASSET_NAME: ${{ github.event.inputs.asset_name || 'neversoft-services-os.apk' }}
+        run: |
+          mkdir -p dist
+          # Prefer the universal (install-anywhere) APK; fall back to the largest.
+          APK=$(ls android/app/build/outputs/apk/release/*universal*.apk 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(ls -S android/app/build/outputs/apk/release/*.apk | head -1)
+          fi
+          echo "Staging $APK -> dist/${ASSET_NAME}"
+          cp "$APK" "dist/${ASSET_NAME}"
+
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSET_NAME: ${{ github.event.inputs.asset_name || 'neversoft-services-os.apk' }}
+        run: |
+          # Refresh the rolling release so the asset (and its stable URL) updates.
+          gh release delete android-preview --yes --cleanup-tag 2>/dev/null || true
+          gh release create android-preview "dist/${ASSET_NAME}" \
+            --title "NeverSoft Services — Android Preview" \
+            --notes "Rolling debug-signed APK for NeverSoft Services Full OS. Enable 'Install unknown apps' to sideload." \
+            --latest
