@@ -10,7 +10,7 @@ import {
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 
 import {theme} from './src/theme';
-import {useStore, actions, loadSettings} from './src/store';
+import {useStore, actions, bootstrap} from './src/store';
 import {send} from './src/agent/controller';
 import AppBar from './src/ui/AppBar';
 import ChatPane from './src/ui/ChatPane';
@@ -28,7 +28,7 @@ export default function App() {
   const panesHeight = useRef(1);
 
   useEffect(() => {
-    void loadSettings();
+    void bootstrap();
   }, []);
 
   return (

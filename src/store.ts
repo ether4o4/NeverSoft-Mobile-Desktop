@@ -7,6 +7,19 @@ import {useSyncExternalStore} from 'react';
 import {ChatMessage} from './llm/types';
 import {Bridge} from './native/bridge';
 
+export interface DownloadState {
+  pct: number;
+  done: boolean;
+  error?: string;
+}
+
+export interface SandboxState {
+  statusText: string;
+  ready: boolean;
+  proot: boolean;
+  alpine: boolean;
+}
+
 export interface UiMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -39,6 +52,9 @@ interface State {
   settings: Settings;
   settingsOpen: boolean;
   history: ChatMessage[];
+  downloads: Record<string, DownloadState>;
+  downloadedModels: string[];
+  sandbox: SandboxState;
 }
 
 let counter = 0;
@@ -58,6 +74,9 @@ let state: State = {
   },
   settingsOpen: false,
   history: [],
+  downloads: {},
+  downloadedModels: [],
+  sandbox: {statusText: 'checking…', ready: false, proot: false, alpine: false},
 };
 
 const subs = new Set<() => void>();
@@ -116,6 +135,15 @@ export const actions = {
   openSettings(open: boolean) {
     set({settingsOpen: open});
   },
+  setDownload(id: string, d: DownloadState) {
+    set({downloads: {...state.downloads, [id]: d}});
+  },
+  setDownloadedModels(list: string[]) {
+    set({downloadedModels: list});
+  },
+  setSandbox(s: SandboxState) {
+    set({sandbox: s});
+  },
   updateSettings(patch: Partial<Settings>) {
     const next = {...state.settings, ...patch};
     set({settings: next});
@@ -163,4 +191,51 @@ export async function loadSettings(): Promise<void> {
     }
     set({settings: s});
   } catch (_e) {}
+}
+
+/** Load settings + device state and wire native progress events. Call once on mount. */
+export async function bootstrap(): Promise<void> {
+  await loadSettings();
+
+  try {
+    const [models, status] = await Promise.all([
+      Bridge.listDownloadedModels(),
+      Bridge.sandboxStatus(),
+    ]);
+    actions.setDownloadedModels(models);
+    actions.setSandbox({
+      statusText: status.statusText,
+      ready: status.ready,
+      proot: status.proot,
+      alpine: status.alpine,
+    });
+    actions.addInfo('shell: ' + status.statusText);
+  } catch (_e) {}
+
+  Bridge.onDownload(e => {
+    actions.setDownload(e.id, {pct: e.pct, done: e.done, error: e.error});
+    if (e.done) {
+      Bridge.listDownloadedModels().then(actions.setDownloadedModels).catch(() => {});
+    }
+  });
+
+  let lastPhase = '';
+  Bridge.onSandbox(e => {
+    if (e.phase !== lastPhase) {
+      lastPhase = e.phase;
+      actions.addInfo('● ' + e.phase);
+    }
+    if (e.pct >= 100) {
+      Bridge.sandboxStatus()
+        .then(s =>
+          actions.setSandbox({
+            statusText: s.statusText,
+            ready: s.ready,
+            proot: s.proot,
+            alpine: s.alpine,
+          }),
+        )
+        .catch(() => {});
+    }
+  });
 }
