@@ -1,20 +1,28 @@
-name: Publish NeverSoft Services APK
+name: Publish MVE APK
 
-# Builds a debug-signed APK and attaches it to a rolling, non-draft
-# "android-preview" release so the download URL is always stable:
-#   …/releases/download/android-preview/neversoft-services-os.apk
+# Builds an installable (debug-signed) APK on every push to main and attaches it
+# to a rolling, non-draft "android-preview" release, so the download URL is
+# always the same:
+#   https://github.com/ether4o4/NeverSoft-Mobile-Desktop/releases/download/android-preview/mve.apk
 on:
   push:
-    branches: [ claude/confident-fermat-cvtlvb ]
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       asset_name:
         description: 'APK file name'
         required: false
-        default: neversoft-services-os.apk
+        default: mve.apk
 
 permissions:
   contents: write
+
+env:
+  # Optional: set a repo variable PROOT_BASE_URL to a host serving
+  #   <PROOT_BASE_URL>/<abi>/libproot.so   (abi = arm64-v8a, armeabi-v7a, x86_64)
+  # and the build ships proot so the app installs full Alpine Linux. Left unset,
+  # the app ships the built-in toybox shell (fully functional) instead.
+  PROOT_BASE_URL: ${{ vars.PROOT_BASE_URL }}
 
 jobs:
   publish:
@@ -50,23 +58,36 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      - name: Fetch proot for full Alpine (optional)
+        if: env.PROOT_BASE_URL != ''
+        run: |
+          set -e
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            dir="android/app/src/main/jniLibs/$abi"
+            mkdir -p "$dir"
+            echo "Fetching proot for $abi"
+            curl -fsSL "$PROOT_BASE_URL/$abi/libproot.so" -o "$dir/libproot.so" \
+              && echo "  ✓ $abi" \
+              || echo "  ⚠ no proot for $abi — that ABI ships toybox"
+          done
+
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Build release APK
+      - name: Build debug APK
         run: |
           cd android
-          ./gradlew assembleRelease --no-configuration-cache
+          ./gradlew assembleDebug --no-configuration-cache
 
       - name: Stage APK
         env:
-          ASSET_NAME: ${{ github.event.inputs.asset_name || 'neversoft-services-os.apk' }}
+          ASSET_NAME: ${{ github.event.inputs.asset_name || 'mve.apk' }}
         run: |
           mkdir -p dist
-          # Prefer the universal (install-anywhere) APK; fall back to the largest.
-          APK=$(ls android/app/build/outputs/apk/release/*universal*.apk 2>/dev/null | head -1)
+          # Prefer a universal APK; otherwise take the largest debug APK built.
+          APK=$(ls android/app/build/outputs/apk/debug/*universal*.apk 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
-            APK=$(ls -S android/app/build/outputs/apk/release/*.apk | head -1)
+            APK=$(ls -S android/app/build/outputs/apk/debug/*.apk | head -1)
           fi
           echo "Staging $APK -> dist/${ASSET_NAME}"
           cp "$APK" "dist/${ASSET_NAME}"
@@ -74,11 +95,11 @@ jobs:
       - name: Publish rolling release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASSET_NAME: ${{ github.event.inputs.asset_name || 'neversoft-services-os.apk' }}
+          ASSET_NAME: ${{ github.event.inputs.asset_name || 'mve.apk' }}
         run: |
           # Refresh the rolling release so the asset (and its stable URL) updates.
           gh release delete android-preview --yes --cleanup-tag 2>/dev/null || true
           gh release create android-preview "dist/${ASSET_NAME}" \
-            --title "NeverSoft Services — Android Preview" \
-            --notes "Rolling debug-signed APK for NeverSoft Services Full OS. Enable 'Install unknown apps' to sideload." \
+            --title "MVE — Android Preview" \
+            --notes "Rolling debug-signed APK: split-screen AI chat + live terminal, on-device or cloud models. Enable 'Install unknown apps' to sideload." \
             --latest
