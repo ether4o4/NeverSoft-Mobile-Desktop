@@ -18,11 +18,12 @@ permissions:
   contents: write
 
 env:
-  # Optional: set a repo variable PROOT_BASE_URL to a host serving
-  #   <PROOT_BASE_URL>/<abi>/libproot.so   (abi = arm64-v8a, armeabi-v7a, x86_64)
-  # and the build ships proot so the app installs full Alpine Linux. Left unset,
-  # the app ships the built-in toybox shell (fully functional) instead.
-  PROOT_BASE_URL: ${{ vars.PROOT_BASE_URL }}
+  # The build bundles a standalone-Android proot so the app installs full Alpine
+  # Linux. Default source is UserLAnd's purpose-built proot (one per ABI, laid
+  # out as <base>/<abi>/assets/proot). Override with a repo variable
+  # PROOT_BASE_URL pointing at your own host using the same layout. If a source
+  # is unreachable, that ABI ships the built-in toybox shell instead.
+  PROOT_BASE_URL: ${{ vars.PROOT_BASE_URL || 'https://raw.githubusercontent.com/CypherpunkArmory/UserLAnd-Assets-Support/master' }}
 
 jobs:
   publish:
@@ -58,18 +59,30 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Fetch proot for full Alpine (optional)
-        if: env.PROOT_BASE_URL != ''
+      - name: Bundle proot for full Alpine
+        continue-on-error: true
         run: |
-          set -e
+          set +e
+          ok=0
           for abi in arm64-v8a armeabi-v7a x86_64; do
-            dir="android/app/src/main/jniLibs/$abi"
-            mkdir -p "$dir"
-            echo "Fetching proot for $abi"
-            curl -fsSL "$PROOT_BASE_URL/$abi/libproot.so" -o "$dir/libproot.so" \
-              && echo "  ✓ $abi" \
-              || echo "  ⚠ no proot for $abi — that ABI ships toybox"
+            dir="android/app/src/main/jniLibs/$abi"; mkdir -p "$dir"
+            url="$PROOT_BASE_URL/$abi/assets/proot"
+            echo "→ $abi: $url"
+            if curl -fsSL --retry 2 "$url" -o "$dir/libproot.so" && [ -s "$dir/libproot.so" ]; then
+              # Reject HTML/JSON error bodies masquerading as the binary (must be an ELF).
+              if head -c4 "$dir/libproot.so" | grep -q $'\x7fELF'; then
+                chmod +x "$dir/libproot.so"
+                echo "  ✓ proot bundled ($(wc -c <"$dir/libproot.so") bytes)"; ok=1
+              else
+                echo "  ⚠ not an ELF — discarding, ships toybox"; rm -f "$dir/libproot.so"
+              fi
+            else
+              echo "  ⚠ unreachable — ships toybox"; rm -f "$dir/libproot.so"
+            fi
           done
+          [ "$ok" = 1 ] && echo "proot bundled → app installs full Alpine" \
+                        || echo "no proot bundled → app ships toybox shell (fully functional)"
+          exit 0
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
