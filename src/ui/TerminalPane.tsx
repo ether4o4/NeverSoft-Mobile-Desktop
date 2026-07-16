@@ -5,13 +5,14 @@ import {useStore} from '../store';
 
 export default function TerminalPane({flex}: {flex: number}) {
   const term = useStore(s => s.term);
+  const sandbox = useStore(s => s.sandbox);
   const ref = useRef<ScrollView>(null);
 
   return (
     <View style={[styles.pane, {flexGrow: flex}]}>
       <View style={styles.bar}>
         <Text style={styles.barLabel}>shell</Text>
-        <Text style={styles.barPath}>alpine · proot</Text>
+        <Text style={styles.barPath}>{sandbox.alpine ? 'alpine · proot' : 'toybox'}</Text>
       </View>
       <ScrollView
         ref={ref}
@@ -47,9 +48,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: '#0d0b12',
+    backgroundColor: '#0d0b0a',
     borderBottomWidth: 1,
-    borderBottomColor: '#1b1728',
+    borderBottomColor: '#1e1a17',
   },
   barLabel: {
     fontFamily: theme.mono,

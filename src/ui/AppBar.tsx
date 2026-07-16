@@ -3,6 +3,7 @@ import {View, Text, Pressable, StyleSheet} from 'react-native';
 import {theme} from '../theme';
 import {useStore} from '../store';
 import {stopAll} from '../agent/controller';
+import {GoldText} from './Gold';
 
 export default function AppBar({onOpenSettings}: {onOpenSettings: () => void}) {
   const settings = useStore(s => s.settings);
@@ -13,7 +14,7 @@ export default function AppBar({onOpenSettings}: {onOpenSettings: () => void}) {
 
   return (
     <View style={styles.bar}>
-      <Text style={styles.mark}>MVE</Text>
+      <GoldText text="MVE" size={17} />
       <Text style={styles.sub}>agent</Text>
       <View style={styles.spacer} />
 

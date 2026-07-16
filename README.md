@@ -7,6 +7,15 @@ chat while you see it run real commands in the terminal below.
 No launcher, no desktop, no OS. Just the two things that matter: **the agent and
 the shell**, in one installable app.
 
+## Download
+
+Every push to `main` publishes an installable (debug-signed) APK at a stable URL:
+
+**→ https://github.com/ether4o4/NeverSoft-Mobile-Desktop/releases/download/android-preview/mve.apk**
+
+Enable "Install unknown apps" to sideload. The link never changes; the file
+behind it refreshes with each build.
+
 ## The split screen
 
 ```

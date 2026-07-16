@@ -2,6 +2,7 @@ import React, {useRef} from 'react';
 import {View, PanResponder, StyleSheet} from 'react-native';
 import {theme} from '../theme';
 import {getState, actions} from '../store';
+import {GoldFill} from './Gold';
 
 /**
  * Draggable purple inlay handle between the chat and terminal. Converts a
@@ -27,7 +28,7 @@ export default function Divider({getHeight}: {getHeight: () => number}) {
 
   return (
     <View style={styles.wrap} {...responder.panHandlers}>
-      <View style={styles.grip} />
+      <GoldFill style={styles.grip} radius={2} />
     </View>
   );
 }
@@ -42,5 +43,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  grip: {width: 44, height: 3, borderRadius: 2, backgroundColor: theme.purple, opacity: 0.7},
+  grip: {width: 44, height: 3, borderRadius: 2},
 });

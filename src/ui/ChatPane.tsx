@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     letterSpacing: 2,
     textTransform: 'uppercase',
-    color: theme.red,
+    color: theme.gold,
     marginBottom: 5,
   },
   aiText: {color: theme.text, fontSize: 14.5, lineHeight: 22},

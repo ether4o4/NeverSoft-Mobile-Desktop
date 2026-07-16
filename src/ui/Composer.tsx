@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import {View, TextInput, Pressable, Text, StyleSheet} from 'react-native';
 import {theme} from '../theme';
 import {useStore} from '../store';
+import {GoldFill} from './Gold';
 
 export default function Composer({onSend}: {onSend: (text: string) => void}) {
   const [text, setText] = useState('');
@@ -30,11 +31,13 @@ export default function Composer({onSend}: {onSend: (text: string) => void}) {
         editable={!busy}
       />
       <Pressable
-        style={[styles.send, busy && styles.sendBusy]}
+        style={busy && styles.sendBusy}
         onPress={submit}
         disabled={busy}
         hitSlop={6}>
-        <Text style={styles.sendIcon}>↑</Text>
+        <GoldFill style={styles.send}>
+          <Text style={styles.sendIcon}>↑</Text>
+        </GoldFill>
       </Pressable>
     </View>
   );
@@ -65,11 +68,9 @@ const styles = StyleSheet.create({
   send: {
     width: 38,
     height: 38,
-    borderRadius: 4,
-    backgroundColor: theme.red,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendBusy: {opacity: 0.4},
-  sendIcon: {color: '#fff', fontSize: 18, fontWeight: '700'},
+  sendIcon: {color: '#1a1205', fontSize: 18, fontWeight: '800'},
 });
