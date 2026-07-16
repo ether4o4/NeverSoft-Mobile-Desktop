@@ -22,20 +22,32 @@ the shell**, in one installable app.
 ```
 
 When the agent decides to run something, it emits a shell block; the app runs it
-in the sandbox and streams the command and output into the terminal, then feeds
-the result back to the model and continues — until the task is done.
+in the sandbox, streams the command and output into the terminal, feeds the
+result back to the model, and continues — until the task is done.
 
 ## Models: on-device or cloud
 
+- **On-device** — pick a small GGUF model (Qwen2.5 3B, Llama 3.2 3B, Gemma 2 2B,
+  Phi-3.5), download it from Hugging Face right in the app, and run it locally via
+  **llama.rn** (llama.cpp). Private, offline, no key.
 - **Cloud** — point it at any OpenAI-compatible endpoint (OpenAI, OpenRouter,
   DeepSeek, Groq, or your own gateway) with your own key. Streams live. Your key
-  is stored only on the device.
-- **On-device** — pick a small GGUF model (Qwen2.5 3B, Llama 3.2 3B, Gemma 2 2B,
-  Phi-3.5) pulled from Hugging Face and run locally via llama.cpp. Private,
-  offline. *(Wired end-to-end; the native inference engine lands in the engine
-  build — see Status.)*
+  stays on the device.
 
-Switch providers from the model chip in the app bar.
+Switch from the model chip in the app bar; manage downloads in Settings.
+
+## The shell
+
+Two modes, chosen automatically:
+
+- **proot + Alpine Linux** — a real userland (apk, coreutils, busybox), installed
+  on demand from Settings. Commands run as fake-root inside the rootfs.
+- **toybox fallback** — Android's `/system/bin/sh` in a private sandbox. Always
+  available: `ls, cat, grep, find, sed, awk, echo, wc, ps…`
+
+The agent and UI never change between modes; installing Alpine just upgrades what
+the shell can do. See [`android/app/src/main/jniLibs/README.md`](android/app/src/main/jniLibs/README.md)
+for the one binary (`libproot.so`) that unlocks Alpine.
 
 ## Emergency stop
 
@@ -48,32 +60,19 @@ The red **STOP** button in the app bar is always live. One tap:
 
 ## Architecture
 
-The UI is provider- and shell-agnostic. Everything meets at two seams:
-
 - `src/llm/*` — the `LlmProvider` interface. `openaiStream.ts` (cloud, SSE over
   XHR) and `localLlama.ts` (on-device, llama.rn) both implement it.
-- `src/native/bridge.ts` → Kotlin `MveBridge` — runs shell scripts in a private
-  sandbox, persists settings, and exposes the `killAll` used by the stop button.
-- `src/agent/agent.ts` — the loop that ties the model to the shell.
-
-## Status
-
-**Milestone 1 (this build) — the app runs and is buildable:**
-split-screen UI, cloud chat with live streaming, the on-device shell + agent
-loop, settings/keys, and the emergency stop. The shell currently runs in the
-app's private sandbox via `/system/bin/sh`.
-
-**Milestone 2 — the engine build:**
-add `llama.rn` (+ NDK config) so on-device GGUF models actually run locally, and
-upgrade the sandbox from bare `sh` to a real **proot + Alpine** rootfs (package
-manager, coreutils). The provider/shell seams already match, so these drop in
-without touching the UI.
+- `src/agent/*` — the loop tying the model to the shell, and the emergency-stop
+  core.
+- `src/native/bridge.ts` → Kotlin `MveBridge` + `SandboxManager` — the shell,
+  model downloads, settings, and `killAll`.
+- `src/ui/*` — split-screen panes, composer, settings.
 
 ## Build
 
 React Native 0.81. CI builds a debug APK on every pull request
 (`.github/workflows/build-apk.yml` → `assembleDebug`); grab it from the run's
-Artifacts. Locally:
+Artifacts. Push to `main` also publishes a draft GitHub Release. Locally:
 
 ```bash
 npm install --legacy-peer-deps

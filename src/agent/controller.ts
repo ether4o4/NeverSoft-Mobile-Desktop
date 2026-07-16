@@ -28,11 +28,14 @@ export function stopAll(): void {
   actions.addInfo('■ stopped by user');
 }
 
-function providerFor(): LlmProvider {
+async function providerFor(): Promise<LlmProvider> {
   const s = getState().settings;
   if (s.provider === 'local') {
-    // GGUF lives under the sandbox once downloaded (milestone 2).
-    return makeLocalProvider('models/' + s.localModelId + '.gguf');
+    const path = await Bridge.modelPath(s.localModelId);
+    if (!path) {
+      throw new Error('That model isn’t downloaded yet — open Settings and download it.');
+    }
+    return makeLocalProvider(path);
   }
   const extra = /openrouter/i.test(s.cloudBaseUrl)
     ? {'HTTP-Referer': 'https://neversoft.app', 'X-Title': 'MVE'}
@@ -54,11 +57,21 @@ export async function send(text: string): Promise<void> {
     return;
   }
 
+  let provider: LlmProvider;
+  try {
+    provider = await providerFor();
+  } catch (e: any) {
+    actions.addUser(t);
+    actions.addInfo('⚠ ' + (e && e.message ? e.message : String(e)));
+    actions.openSettings(true);
+    return;
+  }
+
   running = true;
   const signal = beginRun();
   try {
     await runAgent(
-      providerFor(),
+      provider,
       getState().history,
       t,
       {
