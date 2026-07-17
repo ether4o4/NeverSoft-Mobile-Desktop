@@ -131,11 +131,15 @@ EOF
   git -C proot tag v5.4.0 2>/dev/null || true   # give `git describe` a name
 
   echo "[$abi] compiling proot"
+  # proot is old C; clang 15+ makes several legacy patterns hard errors. Downgrade
+  # them to warnings by baking the flags into CC (without clobbering proot's own
+  # CPPFLAGS/CFLAGS which carry its -I. include paths).
+  local RELAX="-Wno-error -Wno-implicit-function-declaration -Wno-implicit-int -Wno-int-conversion -Wno-incompatible-function-pointer-types"
   PKG_CONFIG_PATH="$w" make -C proot/src V=1 \
-    CC="$CC" LD="$CC" AR="$AR" STRIP="$STRIP" \
+    CC="$CC $RELAX" LD="$CC" AR="$AR" STRIP="$STRIP" \
     OBJCOPY="$OBJCOPY_T" OBJDUMP="$OBJDUMP_T" \
     HAS_LOADER_32BIT= \
-    proot 2>&1 | tail -120
+    proot 2>&1 | tail -160
 
   if [ -x proot/src/proot ]; then
     mkdir -p "$WS/$OUT_ROOT/$abi"
