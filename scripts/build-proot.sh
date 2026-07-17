@@ -89,7 +89,7 @@ EOF
 build_one() {
   local abi="$1" triple="$2" gnu="$3"
   local CC="$TC/${triple}${API}-clang"
-  local OBJCOPY_T="${gnu}-objcopy" OBJDUMP_T="${gnu}-objdump"
+  local OBJCOPY_T="${gnu}-objcopy" OBJDUMP_T="${gnu}-objdump" STRIP_T="${gnu}-strip"
   if [ ! -x "$CC" ]; then echo "[$abi] no compiler at $CC — skipping"; return 1; fi
   command -v "$OBJCOPY_T" >/dev/null 2>&1 || { echo "[$abi] missing $OBJCOPY_T"; return 1; }
   echo "=== [$abi] building proot ==="
@@ -135,16 +135,20 @@ EOF
   # them to warnings by baking the flags into CC (without clobbering proot's own
   # CPPFLAGS/CFLAGS which carry its -I. include paths).
   local RELAX="-Wno-error -Wno-implicit-function-declaration -Wno-implicit-int -Wno-int-conversion -Wno-incompatible-function-pointer-types"
+  # STRIP must be GNU: the loader links at a huge -Ttext vaddr and llvm-strip tries
+  # to allocate the whole span; GNU strip handles it sparsely.
+  # PYTHON=false disables proot's optional Python extension (host pyconfig.h can't
+  # cross-compile).
   PKG_CONFIG_PATH="$w" make -C proot/src V=1 \
-    CC="$CC $RELAX" LD="$CC" AR="$AR" STRIP="$STRIP" \
+    CC="$CC $RELAX" LD="$CC" AR="$AR" STRIP="$STRIP_T" \
     OBJCOPY="$OBJCOPY_T" OBJDUMP="$OBJDUMP_T" \
-    HAS_LOADER_32BIT= \
+    HAS_LOADER_32BIT= PYTHON=false \
     proot 2>&1 | tail -160
 
   if [ -x proot/src/proot ]; then
     mkdir -p "$WS/$OUT_ROOT/$abi"
     cp proot/src/proot "$WS/$OUT_ROOT/$abi/libproot.so"
-    "$STRIP" "$WS/$OUT_ROOT/$abi/libproot.so" 2>/dev/null || true
+    "$STRIP_T" "$WS/$OUT_ROOT/$abi/libproot.so" 2>/dev/null || true
     echo "[$abi] ✓ proot built ($(wc -c <"$WS/$OUT_ROOT/$abi/libproot.so") bytes)"
     file "$WS/$OUT_ROOT/$abi/libproot.so" 2>/dev/null || true
     built_any=1
