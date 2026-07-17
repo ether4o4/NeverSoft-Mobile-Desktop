@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+#
+# Build proot from source for Android with the NDK, and drop the result into
+# android/app/src/main/jniLibs/<abi>/libproot.so so the APK ships full Alpine.
+#
+# Design:
+#   • talloc is compiled and static-linked INTO proot (no libtalloc.so runtime dep).
+#   • proot itself is built dynamic against the NDK sysroot, so on-device it uses
+#     the system linker (/system/bin/linker64) + bionic — exactly the device libc.
+#   • It lives in the native-lib dir (jniLibs → nativeLibraryDir), which is the one
+#     app-writable location Android lets you execute from.
+#
+# Best-effort: always exits 0. If a toolchain/compile step fails, that ABI simply
+# ships the built-in toybox shell instead. The final line prints
+# PROOT_BUILD_RESULT=full-alpine or =toybox-fallback for the CI log to report.
+
+set -u
+
+OUT_ROOT="android/app/src/main/jniLibs"
+API="${PROOT_API:-24}"
+TALLOC_VER="${TALLOC_VER:-2.4.2}"
+
+SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+NDK="$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -1)"
+if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then
+  echo "No NDK found under $SDK/ndk — cannot build proot."
+  echo "PROOT_BUILD_RESULT=toybox-fallback"
+  exit 0
+fi
+echo "Using NDK: $NDK"
+TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+AR="$TC/llvm-ar"
+STRIP="$TC/llvm-strip"
+OBJCOPY="$TC/llvm-objcopy"
+OBJDUMP="$TC/llvm-objdump"
+
+built_any=0
+WS="${GITHUB_WORKSPACE:-$PWD}"
+
+# A minimal libreplace shim so talloc.c compiles standalone against bionic.
+write_replace_shim() {
+  cat > "$1" <<'EOF'
+#ifndef _MVE_REPLACE_H
+#define _MVE_REPLACE_H
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <unistd.h>
+#include <errno.h>
+#include <ctype.h>
+#include <limits.h>
+#include <sys/types.h>
+#ifndef MIN
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#endif
+#ifndef MAX
+#define MAX(a,b) ((a)>(b)?(a):(b))
+#endif
+#ifndef discard_const
+#define discard_const(ptr) ((void *)((intptr_t)(ptr)))
+#endif
+#ifndef discard_const_p
+#define discard_const_p(type, ptr) ((type *)((intptr_t)(ptr)))
+#endif
+#ifndef PRINTF_ATTRIBUTE
+#define PRINTF_ATTRIBUTE(a,b) __attribute__((format(__printf__,a,b)))
+#endif
+#ifndef _PUBLIC_
+#define _PUBLIC_
+#endif
+#ifndef _DEPRECATED_
+#define _DEPRECATED_
+#endif
+#endif
+EOF
+}
+
+build_one() {
+  local abi="$1" triple="$2"
+  local CC="$TC/${triple}${API}-clang"
+  if [ ! -x "$CC" ]; then echo "[$abi] no compiler at $CC — skipping"; return 1; fi
+  echo "=== [$abi] building proot ==="
+  local w; w="$(mktemp -d)"; pushd "$w" >/dev/null || return 1
+
+  # --- talloc (compiled standalone, static) ---
+  if ! curl -fsSL --retry 3 "https://download.samba.org/pub/talloc/talloc-${TALLOC_VER}.tar.gz" -o t.tgz; then
+    echo "[$abi] talloc download failed"; popd >/dev/null; return 1
+  fi
+  tar xf t.tgz
+  local T="talloc-${TALLOC_VER}"
+  write_replace_shim "$T/replace.h"
+  echo "[$abi] compiling talloc"
+  "$CC" -O2 -fPIC -I"$T" -c "$T/talloc.c" -o talloc.o 2>&1 | tail -50
+  if [ ! -f talloc.o ]; then echo "[$abi] talloc compile FAILED"; popd >/dev/null; return 1; fi
+  "$AR" rcs libtalloc.a talloc.o
+
+  # --- proot ---
+  if ! git clone --depth 1 https://github.com/proot-me/proot proot 2>/dev/null; then
+    echo "[$abi] proot clone failed"; popd >/dev/null; return 1
+  fi
+  echo "[$abi] compiling proot"
+  make -C proot/src V=1 \
+    CC="$CC" LD="$CC" AR="$AR" STRIP="$STRIP" OBJCOPY="$OBJCOPY" OBJDUMP="$OBJDUMP" \
+    CPPFLAGS="-I$w/$T" \
+    CFLAGS="-O2 -Wno-error -Wno-implicit-function-declaration" \
+    LDFLAGS="-L$w -ltalloc" \
+    proot 2>&1 | tail -80
+
+  if [ -x proot/src/proot ]; then
+    mkdir -p "$WS/$OUT_ROOT/$abi"
+    cp proot/src/proot "$WS/$OUT_ROOT/$abi/libproot.so"
+    "$STRIP" "$WS/$OUT_ROOT/$abi/libproot.so" 2>/dev/null || true
+    echo "[$abi] ✓ proot built ($(wc -c <"$WS/$OUT_ROOT/$abi/libproot.so") bytes)"
+    file "$WS/$OUT_ROOT/$abi/libproot.so" 2>/dev/null || true
+    built_any=1
+  else
+    echo "[$abi] ✗ proot build FAILED"
+  fi
+  popd >/dev/null
+}
+
+build_one arm64-v8a   aarch64-linux-android
+build_one armeabi-v7a armv7a-linux-androideabi
+build_one x86_64      x86_64-linux-android
+
+if [ "$built_any" = 1 ]; then
+  echo "PROOT_BUILD_RESULT=full-alpine"
+else
+  echo "PROOT_BUILD_RESULT=toybox-fallback"
+fi
+exit 0
