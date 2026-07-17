@@ -138,17 +138,29 @@ EOF
 
   # The proot loader links at a huge -Ttext vaddr (0x2000000000 on arm64). ld.lld
   # pads the output FILE up to that address (~128GB arm64 / 256MB armv7) — the build
-  # dies on "No space". GNU ld keeps the file compact at the same vaddr. So route
-  # ONLY the loader link (it carries -Ttext) through GNU ld, non-PIE; every other
-  # link (the final dynamic proot) keeps using clang's default lld.
-  cat > "$w/ldwrap" <<WRAP
+  # dies on "No space". GNU ld keeps the file compact at the same vaddr. The loader
+  # is freestanding (-static -nostdlib, only .o files), so we invoke GNU ld DIRECTLY
+  # for that link (going through the clang driver makes it pass lld-only flags like
+  # --no-rosegment that GNU ld rejects). Translate the driver args: expand -Wl,
+  # groups into bare ld options, drop -nostdlib/-static (driver-only). Every other
+  # link (the final dynamic proot) still uses clang's default lld.
+  export MVE_GNU_LD="/usr/bin/${gnu}-ld" MVE_CC="$CC"
+  cat > "$w/ldwrap" <<'WRAP'
 #!/bin/sh
-for a in "\$@"; do
-  case "\$a" in
-    *Ttext*) exec "$CC" --ld-path="/usr/bin/${gnu}-ld" -no-pie "\$@" ;;
-  esac
-done
-exec "$CC" "\$@"
+case " $* " in
+  *Ttext*)
+    newargs=""
+    for a in "$@"; do
+      case "$a" in
+        -nostdlib|-static) ;;                                 # driver-only, drop
+        -Wl,*) g=${a#-Wl,}; newargs="$newargs $(printf '%s' "$g" | tr ',' ' ')" ;;
+        *) newargs="$newargs $a" ;;
+      esac
+    done
+    exec "$MVE_GNU_LD" $newargs
+    ;;
+esac
+exec "$MVE_CC" "$@"
 WRAP
   chmod +x "$w/ldwrap"
 
