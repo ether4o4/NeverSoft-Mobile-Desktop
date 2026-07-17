@@ -135,14 +135,27 @@ EOF
   # them to warnings by baking the flags into CC (without clobbering proot's own
   # CPPFLAGS/CFLAGS which carry its -I. include paths).
   local RELAX="-Wno-error -Wno-implicit-function-declaration -Wno-implicit-int -Wno-int-conversion -Wno-incompatible-function-pointer-types"
-  # STRIP must be GNU (llvm-strip OOMs on the loader's huge -Ttext vaddr).
-  # -z noseparate-code: the loader links at -Ttext=0x2000000000; with the default
-  # separate-code layout ld.lld pads the FILE offset up to that virtual address,
-  # producing a ~128GB (arm64) / 256MB (armv7) file. Merging into one segment keeps
-  # the file compact. Baked into LD so it also applies to the final proot link
-  # (harmless there). PYTHON=false skips proot's Python extension.
+
+  # The proot loader links at a huge -Ttext vaddr (0x2000000000 on arm64). ld.lld
+  # pads the output FILE up to that address (~128GB arm64 / 256MB armv7) — the build
+  # dies on "No space". GNU ld keeps the file compact at the same vaddr. So route
+  # ONLY the loader link (it carries -Ttext) through GNU ld, non-PIE; every other
+  # link (the final dynamic proot) keeps using clang's default lld.
+  cat > "$w/ldwrap" <<WRAP
+#!/bin/sh
+for a in "\$@"; do
+  case "\$a" in
+    *Ttext*) exec "$CC" --ld-path="/usr/bin/${gnu}-ld" -no-pie "\$@" ;;
+  esac
+done
+exec "$CC" "\$@"
+WRAP
+  chmod +x "$w/ldwrap"
+
+  # STRIP must be GNU (llvm-strip OOMs on the loader's high -Ttext vaddr).
+  # PYTHON=false skips proot's Python extension.
   PKG_CONFIG_PATH="$w" make -C proot/src V=1 \
-    CC="$CC $RELAX" LD="$CC -Wl,-z,noseparate-code" AR="$AR" STRIP="$STRIP_T" \
+    CC="$CC $RELAX" LD="$w/ldwrap" AR="$AR" STRIP="$STRIP_T" \
     OBJCOPY="$OBJCOPY_T" OBJDUMP="$OBJDUMP_T" \
     HAS_LOADER_32BIT= PYTHON=false \
     proot 2>&1 | tail -160
