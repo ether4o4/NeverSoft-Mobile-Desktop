@@ -1,0 +1,10 @@
+{
+  "seed_run": 37382683518,
+  "seed_sha": "bc99a9967faca98e42fe17643d851e8508778eff",
+  "seed_apk_sha": "76f2e352d27dc22f6d39daabaca2a007b2135657f5c509cdb817993cf4073163",
+  "main_path": ".github/workflows/build-apk.yml",
+  "main_artifact": "vista-launcher-debug",
+  "selector": "(^|/).*arm64-v8a\\.apk$",
+  "asset_prefix": "NeverSoft-Mobile-Desktop-test",
+  "abi": "arm64-v8a"
+}
