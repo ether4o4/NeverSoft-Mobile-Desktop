@@ -115,13 +115,13 @@ export const actions = {
     // reserved for future trimming/formatting
   },
   addCmd(text: string) {
-    set({term: [...state.term, {id: nid(), kind: 'cmd', text}]});
+    set({term: [...state.term.slice(-499), {id: nid(), kind: 'cmd', text: text.slice(-16000)}]});
   },
   addOut(text: string, isErr: boolean) {
-    set({term: [...state.term, {id: nid(), kind: isErr ? 'err' : 'out', text}]});
+    set({term: [...state.term.slice(-499), {id: nid(), kind: isErr ? 'err' : 'out', text: text.slice(-16000)}]});
   },
   addInfo(text: string) {
-    set({term: [...state.term, {id: nid(), kind: 'info', text}]});
+    set({term: [...state.term.slice(-499), {id: nid(), kind: 'info', text: text.slice(-16000)}]});
   },
   clearTerm() {
     set({term: []});
@@ -147,13 +147,14 @@ export const actions = {
   updateSettings(patch: Partial<Settings>) {
     const next = {...state.settings, ...patch};
     set({settings: next});
-    void persist(next);
+    persistence = persistence.then(() => persist(next));
   },
   history(): ChatMessage[] {
     return state.history;
   },
 };
 
+let persistence: Promise<void> = Promise.resolve();
 async function persist(s: Settings) {
   try {
     await Bridge.setPref('provider', s.provider);
@@ -194,7 +195,7 @@ export async function loadSettings(): Promise<void> {
 }
 
 /** Load settings + device state and wire native progress events. Call once on mount. */
-export async function bootstrap(): Promise<void> {
+export async function bootstrap(): Promise<() => void> {
   await loadSettings();
 
   try {
@@ -212,7 +213,7 @@ export async function bootstrap(): Promise<void> {
     actions.addInfo('shell: ' + status.statusText);
   } catch (_e) {}
 
-  Bridge.onDownload(e => {
+  const unsubscribeDownload = Bridge.onDownload(e => {
     actions.setDownload(e.id, {pct: e.pct, done: e.done, error: e.error});
     if (e.done) {
       Bridge.listDownloadedModels().then(actions.setDownloadedModels).catch(() => {});
@@ -220,7 +221,7 @@ export async function bootstrap(): Promise<void> {
   });
 
   let lastPhase = '';
-  Bridge.onSandbox(e => {
+  const unsubscribeSandbox = Bridge.onSandbox(e => {
     if (e.phase !== lastPhase) {
       lastPhase = e.phase;
       actions.addInfo('● ' + e.phase);
@@ -238,4 +239,5 @@ export async function bootstrap(): Promise<void> {
         .catch(() => {});
     }
   });
+  return () => { unsubscribeDownload(); unsubscribeSandbox(); };
 }

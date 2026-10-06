@@ -28,7 +28,13 @@ export default function App() {
   const panesHeight = useRef(1);
 
   useEffect(() => {
-    void bootstrap();
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    void bootstrap().then(unsubscribe => {
+      if (disposed) unsubscribe();
+      else cleanup = unsubscribe;
+    });
+    return () => { disposed = true; cleanup?.(); };
   }, []);
 
   return (

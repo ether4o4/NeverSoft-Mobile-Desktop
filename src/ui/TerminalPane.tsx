@@ -7,6 +7,7 @@ export default function TerminalPane({flex}: {flex: number}) {
   const term = useStore(s => s.term);
   const sandbox = useStore(s => s.sandbox);
   const ref = useRef<ScrollView>(null);
+  const following = useRef(true);
 
   return (
     <View style={[styles.pane, {flexGrow: flex}]}>
@@ -18,7 +19,14 @@ export default function TerminalPane({flex}: {flex: number}) {
         ref={ref}
         style={styles.scroll}
         contentContainerStyle={styles.content}
-        onContentSizeChange={() => ref.current?.scrollToEnd({animated: true})}>
+        scrollEventThrottle={32}
+        onScroll={e => {
+          const {contentOffset, contentSize, layoutMeasurement} = e.nativeEvent;
+          following.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 80;
+        }}
+        onContentSizeChange={() => {
+          if (following.current) ref.current?.scrollToEnd({animated: false});
+        }}>
         {term.map(e => {
           if (e.kind === 'cmd') {
             return (

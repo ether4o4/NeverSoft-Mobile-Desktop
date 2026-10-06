@@ -7,6 +7,7 @@ export default function ChatPane({flex}: {flex: number}) {
   const messages = useStore(s => s.messages);
   const status = useStore(s => s.status);
   const ref = useRef<ScrollView>(null);
+  const following = useRef(true);
 
   return (
     <ScrollView
@@ -14,7 +15,14 @@ export default function ChatPane({flex}: {flex: number}) {
       style={[styles.pane, {flexGrow: flex}]}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
-      onContentSizeChange={() => ref.current?.scrollToEnd({animated: true})}>
+      scrollEventThrottle={32}
+      onScroll={e => {
+        const {contentOffset, contentSize, layoutMeasurement} = e.nativeEvent;
+        following.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 80;
+      }}
+      onContentSizeChange={() => {
+        if (following.current) ref.current?.scrollToEnd({animated: false});
+      }}>
       {messages.length === 0 && (
         <Text style={styles.empty}>
           Ask me to find something, run a command, or build a file — I’ll work in the shell below,
