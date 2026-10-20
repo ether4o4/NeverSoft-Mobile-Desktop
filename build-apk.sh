@@ -142,21 +142,15 @@ clean_builds() {
 bundle_assets() {
     echo -e "${YELLOW}Bundling JavaScript assets...${NC}"
     
-    # Check if index.js exists
+    # Missing entrypoints are build errors, never generate a placeholder app.
     if [ ! -f "$PROJECT_ROOT/index.js" ]; then
-        echo -e "${YELLOW}Warning: index.js not found, creating minimal entry point...${NC}"
-        mkdir -p "$PROJECT_ROOT"
-        cat > "$PROJECT_ROOT/index.js" << 'EOF'
-import { AppRegistry } from 'react-native';
-import { name as appName } from './app.json';
-
-// Minimal placeholder app
-const App = () => null;
-
-AppRegistry.registerComponent(appName, () => App);
-EOF
+        echo 'ERROR: index.js missing' >&2
+        exit 1
     fi
-    
+
+    mkdir -p "$ANDROID_DIR/app/src/main/assets"
+    rm -f "$ANDROID_DIR/app/src/main/assets/index.android.bundle"
+
     # Check if react-native CLI is available
     if [ -f "$PROJECT_ROOT/node_modules/.bin/react-native" ]; then
         cd "$PROJECT_ROOT"
@@ -169,14 +163,14 @@ EOF
             --reset-cache
         echo -e "${GREEN}✓ Assets bundled${NC}"
     else
-        echo -e "${YELLOW}Warning: React Native not installed. Skipping asset bundling.${NC}"
-        echo -e "${YELLOW}Run 'npm install' or 'yarn install' first for full build.${NC}"
-        
-        # Create empty bundle placeholder
-        mkdir -p "$ANDROID_DIR/app/src/main/assets"
-        echo "// Placeholder bundle - run npm install for actual build" > "$ANDROID_DIR/app/src/main/assets/index.android.bundle"
+        echo 'ERROR: React Native dependencies missing; run npm install first' >&2
+        exit 1
     fi
     
+    if [ ! -s "$ANDROID_DIR/app/src/main/assets/index.android.bundle" ]; then
+        echo 'ERROR: JavaScript bundle is missing or empty' >&2
+        exit 1
+    fi
     echo ""
 }
 
