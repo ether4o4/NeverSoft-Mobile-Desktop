@@ -1,4 +1,4 @@
-name: Build Vista Launcher APK
+name: Build MVE Android APK
 
 on:
   push:
@@ -56,6 +56,12 @@ jobs:
     - name: Install dependencies
       run: npm install --legacy-peer-deps
 
+    - name: Bundle React Native JavaScript
+      run: |
+        mkdir -p android/app/src/main/assets
+        npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
+        test -s android/app/src/main/assets/index.android.bundle
+
     - name: Make gradlew executable
       run: chmod +x android/gradlew
 
@@ -90,6 +96,21 @@ jobs:
           echo "No signing config, building debug instead"
           ./gradlew assembleDebug --no-configuration-cache
         fi
+
+    - name: Verify APK contains JavaScript bundle
+      run: |
+        python3 - <<'PY'
+        import glob, zipfile, sys
+        apks = glob.glob('android/app/build/outputs/apk/**/*.apk', recursive=True)
+        if not apks: sys.exit('No APKs generated')
+        for apk in apks:
+            with zipfile.ZipFile(apk) as z:
+                names = z.namelist()
+                bundles = [n for n in names if n == 'assets/index.android.bundle']
+                if not bundles or z.getinfo(bundles[0]).file_size < 1024:
+                    sys.exit(f'Missing or suspiciously small JS bundle: {apk}')
+                print('Verified JS bundle:', apk)
+        PY
 
     - name: Upload Debug APK
       if: github.event.inputs.build_type == 'debug' || github.event_name == 'pull_request'
